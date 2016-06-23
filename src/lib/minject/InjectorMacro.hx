@@ -137,14 +137,6 @@ class InjectorMacro
 		}
 	}
 
-	/**
-		Do not call this method, it is called in extraParams.hxml
-	**/
-	public static function addMetadata()
-	{
-		Context.onGenerate(processTypes);
-	}
-
 	static function processTypes(types:Array<Type>):Void
 	{
 		for (type in types) switch (type)
