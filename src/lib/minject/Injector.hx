@@ -420,14 +420,4 @@ class Injector
 		return '$type#$name';
 	}
 	
-	
-	#if macro
-	/**
-		Do not call this method, it is called in extraParams.hxml
-	**/
-	public static function addMetadata()
-	{
-		haxe.macro.Context.onGenerate(@:privateAccess InjectorMacro.processTypes);
-	}
-	#end
 }

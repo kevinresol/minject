@@ -7,14 +7,24 @@ import haxe.macro.Context;
 import haxe.macro.Compiler;
 import haxe.macro.Expr;
 import haxe.macro.Type;
+import tink.SyntaxHub;
 
+using tink.MacroApi;
 using haxe.macro.Tools;
 using Lambda;
 
 class InjectorMacro
 {
 	static var keptTypes = new Map<String, Bool>();
-
+	
+	public static function use() {
+		SyntaxHub.classLevel.whenever(
+			function(c:ClassBuilder) {
+				processInst(c);
+				return false; // it doesn't modified the fields
+			}
+		);
+	}
 	/**
 		Called by the injector at macro time to tell the compiler which
 		constructors should be kept (as they are mapped in for instantiation
@@ -137,63 +147,60 @@ class InjectorMacro
 		}
 	}
 
-	static function processTypes(types:Array<Type>):Void
-	{
-		for (type in types) switch (type)
-		{
-			case TInst(t, _): processInst(t);
-			default:
-		}
-	}
+	// static function processTypes(types:Array<Type>):Void
+	// {
+	// 	for (type in types) switch (type)
+	// 	{
+	// 		case TInst(t, _): processInst(t);
+	// 		default:
+	// 	}
+	// }
 
-	static function processInst(t:Ref<ClassType>):Void
+	static function processInst(c:ClassBuilder):Void
 	{
-		var ref = t.get();
-
+		var ref = c.target;
+		
 		// add meta to interfaces, there's no otherway of telling at runtime!
 		if (ref.isInterface && !ref.meta.has('interface')) ref.meta.add("interface", [], ref.pos);
-
+		
 		var infos = [];
 		var keep = new Map<String, Bool>();
 
 		// process constructor
-		if (ref.constructor != null) processField(ref.constructor.get(), infos, keep);
+		if (c.hasConstructor()) processField(c.getConstructor().toHaxe(), infos, keep);
 
 		// process fields
-		var fields = ref.fields.get();
-		for (field in fields) processField(field, infos, keep);
+		for (field in c) processField(field, infos, keep);
 
 		// keep additional injectee fields (setters)
-		for (field in fields)
+		for (field in c)
 			if (keep.exists(field.name))
-				field.meta.add(':keep', [], Context.currentPos());
+				field.addMeta(':keep');
 
 		// add rtti to type
 		var rtti = infos.map(function (rtti) return macro $v{rtti});
 		if (rtti.length > 0) ref.meta.add('rtti', rtti, ref.pos);
 	}
 
-	static function processField(field:ClassField, rttis:Array<Array<String>>, keep:Map<String, Bool>):Void
+	static function processField(field:Member, rttis:Array<Array<String>>, keep:Map<String, Bool>):Void
 	{
 		if (!field.isPublic) return;
 
 		// find minject metadata
-		var meta = field.meta.get();
-		var inject = meta.find(function (meta) return meta.name == 'inject');
-		var post = meta.find(function (meta) return meta.name == 'post');
+		var inject = field.extractMeta('inject').orNull();
+		var post = field.extractMeta('post').orNull();
 
 		// only process public fields with minject metadata
 		if (inject == null && post == null) return;
 
 		// keep injected fields
-		field.meta.add(':keep', [], Context.currentPos());
-
+		field.addMeta(':keep');
+		
 		// extract injection names from metadata
 		var names = [];
 		if (inject != null)
 		{
 			names = inject.params;
-			field.meta.remove('inject');
 		}
 
 		var rtti = [field.name];
@@ -201,30 +208,27 @@ class InjectorMacro
 
 		switch (field.kind)
 		{
-			case FVar(_, _):
+			case FVar(t, e) | FProp(_, _, t, e):
 				keep.set('set_' + field.name, true);
-				rtti.push(getType(field.type));
+				rtti.push(getType(t.toType()));
 				if (names.length > 0) rtti.push(names[0].getValue());
 				else rtti.push('');
-			case FMethod(_):
-				switch (field.type)
-				{
-					case TFun(args, _):
+			case FFun(fun):
 						if (post != null)
 						{
 							var order = post.params.length > 0 ? post.params[0].getValue() + 1 : 1;
-							field.meta.remove('post');
 							rtti.push(""+order);
 						}
 						else
 						{
 							rtti.push("");
 						}
-
+						
+						var args = fun.args;
 						for (i in 0...args.length)
 						{
 							var arg = args[i];
-							var type = getType(arg.t);
+							var type = getType(arg.type.toType());
 
 							if (!arg.opt && type == 'Dynamic')
 							{
@@ -236,8 +240,6 @@ class InjectorMacro
 							rtti.push(names[i] == null ? '' : names[i].getValue());
 							rtti.push(arg.opt ? 'o' : '');
 						}
-					default:
-				}
 		}
 	}
 }

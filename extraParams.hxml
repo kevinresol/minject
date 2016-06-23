@@ -1,1 +1,1 @@
---macro minject.Injector.addMetadata()
+--macro minject.InjectorMacro.use()
