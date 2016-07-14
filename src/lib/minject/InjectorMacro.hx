@@ -18,10 +18,11 @@ class InjectorMacro
 	static var keptTypes = new Map<String, Bool>();
 	
 	public static function use() {
-		SyntaxHub.classLevel.whenever(
+		SyntaxHub.classLevel.after(
+			function(_) return true,
 			function(c:ClassBuilder) {
 				processInst(c);
-				return false; // it doesn't modified the fields
+				return false; // it doesn't modify the fields
 			}
 		);
 	}
